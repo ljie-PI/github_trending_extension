@@ -1,0 +1,39 @@
+.language-section {
+    transition: transform 0.2s;
+}
+
+.language-section:hover {
+    transform: translateY(-2px);
+}
+
+.repo-card {
+    transition: all 0.2s;
+    border: 1px solid #e5e7eb;
+}
+
+.repo-card:hover {
+    transform: translateY(-2px);
+    border-color: #d1d5db;
+}
+
+.line-clamp-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.language-indicator {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    margin-right: 6px;
+}
+
+.language-Python { background-color: #3572A5; }
+.language-C\+\+ { background-color: #f34b7d; }
+.language-C { background-color: #555555; }
+.language-Rust { background-color: #dea584; }
+.language-TypeScript { background-color: #2b7489; }
+.language-Lua { background-color: #000080; }
