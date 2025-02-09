@@ -151,6 +151,22 @@ function createLanguageSection(language, repos, onTimeRangeChange) {
 
     navigationDiv.appendChild(timeRangeSelect);
 
+    // Create popup container
+    let popupWindow = null;
+
+    // Handle popup window close
+    window.addEventListener('beforeunload', () => {
+        if (popupWindow && !popupWindow.closed) {
+            popupWindow.close();
+        }
+    });
+
+    const closePopup = () => {
+        if (popupWindow && !popupWindow.closed) {
+            popupWindow.close();
+        }
+    };
+
     // Handle time range change
     timeRangeSelect.addEventListener('change', async (e) => {
         e.stopPropagation(); // Prevent section collapse
@@ -205,6 +221,30 @@ function createLanguageSection(language, repos, onTimeRangeChange) {
                 ${stars} stars
             </div>
         `;
+
+        // Add popup functionality
+        const titleElement = card.querySelector('a');
+        titleElement.addEventListener('click', (e) => {
+            e.preventDefault();
+            const repoUrl = titleElement.getAttribute('href');
+
+            // Close existing popup if open
+            if (popupWindow && !popupWindow.closed) {
+                popupWindow.close();
+            }
+
+            // Open new popup window
+            const width = Math.min(1200, window.screen.width * 0.8);
+            const height = Math.min(800, window.screen.height * 0.8);
+            const left = (window.screen.width - width) / 2;
+            const top = (window.screen.height - height) / 2;
+
+            popupWindow = window.open(
+                repoUrl,
+                'github-repo',
+                `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes,status=yes`
+            );
+        });
 
         grid.appendChild(card);
     });
