@@ -127,6 +127,11 @@ function createLanguageSection(language, repos, onTimeRangeChange) {
     const timeRangeSelect = document.createElement('select');
     timeRangeSelect.className = 'text-gray-700 font-medium text-lg bg-transparent border border-gray-300 rounded-md px-3 py-1 cursor-pointer hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500';
 
+    // Prevent click event from bubbling up to flex container
+    timeRangeSelect.addEventListener('click', (e) => {
+        e.stopPropagation();
+    });
+
     // Add options
     timeRanges.forEach(range => {
         const option = document.createElement('option');
