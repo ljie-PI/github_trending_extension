@@ -1,4 +1,4 @@
-const languages = [null, 'Python', 'TypeScript', 'Rust', 'Lua', 'C', 'C++'];
+let languages = [null]; // Will be populated from settings (null = Overall Trending)
 const CACHE_DURATION = 60 * 60 * 1000;
 //const CACHE_DURATION = 0;
 const timeRanges = ['daily', 'weekly', 'monthly'];
@@ -11,44 +11,32 @@ const timeRangeLabels = {
 // Keep track of selected time range for each section
 const sectionTimeRanges = new Map();
 
-// Language colors mapping (GitHub's official language colors)
+// Use getLanguageColor from language-settings.js
 function getLanguageColor(language) {
-    const colors = {
-        'Python': '#3572A5',
-        'TypeScript': '#2b7489',
-        'Rust': '#dea584',
-        'Lua': '#000080',
-        'C': '#555555',
-        'C++': '#f34b7d',
-        'JavaScript': '#f1e05a',
-        'Java': '#b07219',
-        'Go': '#00ADD8',
-        'PHP': '#4F5D95',
-        'Ruby': '#701516',
-        'Swift': '#fa7343',
-        'Kotlin': '#A97BFF',
-        'C#': '#239120',
-        'Shell': '#89e051',
-        'Vue': '#41b883',
-        'HTML': '#e34c26',
-        'CSS': '#1572B6',
-        'Dart': '#00B4AB',
-        'R': '#198CE7',
-        'Scala': '#c22d40',
-        'Perl': '#0298c3',
-        'Haskell': '#5e5086',
-        'Clojure': '#db5855',
-        'Erlang': '#B83998',
-        'F#': '#b845fc',
-        'Julia': '#a270ba',
-        'Matlab': '#e16737',
-        'Objective-C': '#438eff',
-        'PowerShell': '#012456',
-        'Assembly': '#6E4C13',
-        'VHDL': '#adb2cb',
-        'Verilog': '#b2b7f8'
-    };
-    return colors[language] || '#8b5cf6';
+    return window.LanguageSettings.getLanguageColor(language);
+}
+
+// Generate CSS class name for language
+function getLanguageClass(language) {
+    if (!language) return 'language-custom';
+    
+    // Check if it's a predefined language
+    const predefinedLanguages = window.LanguageSettings.AVAILABLE_LANGUAGES;
+    if (predefinedLanguages && predefinedLanguages.includes(language)) {
+        // Map languages with special characters to CSS-safe names
+        const languageClassMap = {
+            'C#': 'CSharp',
+            'C++': 'CPlusPlus',
+            'F#': 'FSharp',
+            'Objective-C': 'ObjectiveC'
+        };
+        
+        const safeName = languageClassMap[language] || language.replace(/\s+/g, '');
+        return `language-${safeName}`;
+    }
+    
+    // Custom language - use default class
+    return 'language-custom';
 }
 
 function parseTrendingHTML(html) {
@@ -182,9 +170,9 @@ function createLanguageSection(language, repos, onTimeRangeChange) {
     const titleDiv = document.createElement('div');
     titleDiv.className = 'flex items-center';
     titleDiv.innerHTML = language ?
-        `<span class="language-indicator language-${language}"></span>
-        <h2 class="text-2xl font-bold">${language}</h2>` :
-        `<h2 class="text-2xl font-bold">Overall Trending</h2>`;
+        `<span class="language-indicator ${getLanguageClass(language)}"></span>
+        <h2 class="text-2xl font-bold text-gray-800">${language}</h2>` :
+        `<h2 class="text-2xl font-bold text-gray-800">Overall Trending</h2>`;
 
     const navigationDiv = document.createElement('div');
     navigationDiv.className = 'flex items-center navigation-controls';
@@ -281,11 +269,12 @@ function createLanguageSection(language, repos, onTimeRangeChange) {
         const forks = repo.forks_count.toLocaleString();
         const description = repo.description ? repo.description : 'No description available';
         
-        // Generate language indicator HTML
-        const languageHtml = repo.language ? 
+        // Generate language indicator HTML - use section language or detected repo language
+        const displayLanguage = language || repo.language;
+        const languageHtml = displayLanguage ? 
             `<span class="flex items-center text-gray-600 text-xs mr-4">
-                <span class="language-dot language-${repo.language.replace(/\+/g, 'plus').replace(/\s+/g, '-').toLowerCase()}" style="background-color: ${getLanguageColor(repo.language)}"></span>
-                ${repo.language}
+                <span class="language-dot ${getLanguageClass(displayLanguage)}"></span>
+                ${displayLanguage}
             </span>` : '';
 
         // Generate period stars HTML
@@ -486,9 +475,183 @@ async function refreshCache() {
     }
 }
 
-// Initial load
-displayTrendingRepos();
+// Settings functionality
+let currentSelectedLanguages = [];
 
-// Start background cache refresh
-setInterval(refreshCache, CACHE_DURATION);
-// refreshCache(); // Initial cache population
+// Initialize settings modal
+function initializeSettings() {
+    const settingsBtn = document.getElementById('settings-btn');
+    const settingsModal = document.getElementById('settings-modal');
+    const closeSettings = document.getElementById('close-settings');
+    const cancelSettings = document.getElementById('cancel-settings');
+    const saveSettings = document.getElementById('save-settings');
+    const resetSettings = document.getElementById('reset-settings');
+    const languageCheckboxes = document.getElementById('language-checkboxes');
+    const customLanguageInput = document.getElementById('custom-language-input');
+    const addCustomLanguageBtn = document.getElementById('add-custom-language');
+
+    // Populate language checkboxes
+    async function populateLanguageCheckboxes(selectedLanguages) {
+        languageCheckboxes.innerHTML = '';
+        const availableLanguages = await window.LanguageSettings.getAvailableLanguages();
+        const customLanguages = await window.LanguageSettings.loadCustomLanguages();
+        
+        availableLanguages.forEach(language => {
+            const checkbox = document.createElement('div');
+            checkbox.className = 'flex items-center justify-between';
+            
+            const isChecked = selectedLanguages.includes(language);
+            const isCustom = customLanguages.includes(language);
+            
+            checkbox.innerHTML = `
+                <div class="flex items-center">
+                    <input type="checkbox" id="lang-${language}" class="mr-2" ${isChecked ? 'checked' : ''}>
+                    <label for="lang-${language}" class="flex items-center cursor-pointer text-sm">
+                        <span class="language-dot mr-2 ${getLanguageClass(language)}"></span>
+                        ${language}
+                        ${isCustom ? '<span class="ml-1 text-xs text-blue-600">(custom)</span>' : ''}
+                    </label>
+                </div>
+                ${isCustom ? `
+                    <button class="remove-custom-lang text-red-500 hover:text-red-700 text-xs ml-2" 
+                            data-language="${language}" title="Remove custom language">
+                        ✕
+                    </button>
+                ` : ''}
+            `;
+            languageCheckboxes.appendChild(checkbox);
+        });
+        
+        // Add event listeners for remove buttons
+        languageCheckboxes.querySelectorAll('.remove-custom-lang').forEach(button => {
+            button.addEventListener('click', async (e) => {
+                const language = e.target.dataset.language;
+                if (confirm(`Remove custom language "${language}"?`)) {
+                    await window.LanguageSettings.removeCustomLanguage(language);
+                    // Refresh the checkbox list
+                    const currentSelected = getCurrentSelectedLanguages();
+                    await populateLanguageCheckboxes(currentSelected);
+                }
+            });
+        });
+    }
+    
+    // Get currently selected languages from checkboxes
+    function getCurrentSelectedLanguages() {
+        const checkboxes = languageCheckboxes.querySelectorAll('input[type="checkbox"]');
+        const selected = [];
+        checkboxes.forEach(checkbox => {
+            if (checkbox.checked) {
+                const language = checkbox.id.replace('lang-', '');
+                selected.push(language);
+            }
+        });
+        return selected;
+    }
+
+    // Add custom language functionality
+    async function addCustomLanguage() {
+        const languageName = customLanguageInput.value.trim();
+        if (!languageName) {
+            alert('Please enter a language name');
+            return;
+        }
+        
+        try {
+            await window.LanguageSettings.addCustomLanguage(languageName);
+            customLanguageInput.value = '';
+            
+            // Refresh the checkbox list
+            const currentSelected = getCurrentSelectedLanguages();
+            currentSelected.push(languageName); // Auto-select the new language
+            await populateLanguageCheckboxes(currentSelected);
+            
+            alert(`Custom language "${languageName}" added successfully!`);
+        } catch (error) {
+            alert(`Error: ${error.message}`);
+        }
+    }
+    
+    addCustomLanguageBtn.addEventListener('click', addCustomLanguage);
+    
+    // Allow Enter key to add custom language
+    customLanguageInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            addCustomLanguage();
+        }
+    });
+
+    // Open settings modal
+    settingsBtn.addEventListener('click', async () => {
+        currentSelectedLanguages = await window.LanguageSettings.loadSelectedLanguages();
+        await populateLanguageCheckboxes(currentSelectedLanguages);
+        settingsModal.classList.remove('hidden');
+    });
+
+    // Close settings modal
+    function closeModal() {
+        settingsModal.classList.add('hidden');
+    }
+
+    closeSettings.addEventListener('click', closeModal);
+    cancelSettings.addEventListener('click', closeModal);
+
+    // Close modal when clicking outside
+    settingsModal.addEventListener('click', (e) => {
+        if (e.target === settingsModal) {
+            closeModal();
+        }
+    });
+
+    // Reset to default settings
+    resetSettings.addEventListener('click', async () => {
+        const defaultLanguages = window.LanguageSettings.getDefaultLanguages();
+        await populateLanguageCheckboxes(defaultLanguages);
+    });
+
+    // Save settings
+    saveSettings.addEventListener('click', async () => {
+        const selectedLanguages = getCurrentSelectedLanguages();
+
+        // Save to storage
+        await window.LanguageSettings.saveSelectedLanguages(selectedLanguages);
+        
+        // Update current languages and reload
+        await loadLanguageSettings();
+        closeModal();
+        
+        // Reload the page with new settings
+        displayTrendingRepos();
+    });
+}
+
+// Load language settings and update languages array
+async function loadLanguageSettings() {
+    try {
+        const selectedLanguages = await window.LanguageSettings.loadSelectedLanguages();
+        // Always include null (Overall Trending) first, then selected languages
+        languages = [null, ...selectedLanguages];
+    } catch (error) {
+        console.error('Error loading language settings:', error);
+        // Fallback to default languages
+        languages = [null, ...window.LanguageSettings.getDefaultLanguages()];
+    }
+}
+
+// Initialize everything
+async function initialize() {
+    // Load settings first
+    await loadLanguageSettings();
+    
+    // Initialize settings modal
+    initializeSettings();
+    
+    // Initial load
+    displayTrendingRepos();
+    
+    // Start background cache refresh
+    setInterval(refreshCache, CACHE_DURATION);
+}
+
+// Start the application
+initialize();
