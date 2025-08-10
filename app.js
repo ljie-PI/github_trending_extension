@@ -71,6 +71,27 @@ function parseTrendingHTML(html) {
         const avatarElement = article.querySelector('img[src*="avatars"]');
         const avatar = avatarElement ? avatarElement.src : `https://github.com/${owner.trim()}.png?size=40`;
 
+        // Extract developers/contributors (Built by section)
+        const developers = [];
+        const builtBySection = article.querySelector('span:contains("Built by"), .text-gray:contains("Built by")') || 
+                              Array.from(article.querySelectorAll('span')).find(span => 
+                                  span.textContent.includes('Built by'));
+        
+        if (builtBySection) {
+            const developerLinks = builtBySection.parentElement.querySelectorAll('a[href^="/"]');
+            for (let i = 0; i < Math.min(5, developerLinks.length); i++) {
+                const link = developerLinks[i];
+                const avatar = link.querySelector('img');
+                if (avatar && link.getAttribute('href').startsWith('/')) {
+                    developers.push({
+                        username: link.getAttribute('href').substring(1),
+                        avatar_url: avatar.src,
+                        profile_url: `https://github.com${link.getAttribute('href')}`
+                    });
+                }
+            }
+        }
+
         return {
             full_name: `${owner.trim()}/${repo.trim()}`,
             description,
@@ -81,7 +102,8 @@ function parseTrendingHTML(html) {
             period_stars: periodStars,
             period_range: periodRange,
             avatar_url: avatar,
-            owner: owner.trim()
+            owner: owner.trim(),
+            developers: developers
         };
     });
 }
@@ -210,22 +232,6 @@ function createLanguageSection(language, repos, onTimeRangeChange) {
 
     navigationDiv.appendChild(timeRangeSelect);
 
-    // Create popup container
-    let popupWindow = null;
-
-    // Handle popup window close
-    window.addEventListener('beforeunload', () => {
-        if (popupWindow && !popupWindow.closed) {
-            popupWindow.close();
-        }
-    });
-
-    const closePopup = () => {
-        if (popupWindow && !popupWindow.closed) {
-            popupWindow.close();
-        }
-    };
-
     // Handle time range change
     timeRangeSelect.addEventListener('change', async (e) => {
         e.stopPropagation(); // Prevent section collapse
@@ -286,12 +292,30 @@ function createLanguageSection(language, repos, onTimeRangeChange) {
                 ${repo.period_stars.toLocaleString()} stars ${repo.period_range}
             </span>` : '';
 
+        // Generate developers HTML
+        const developersHtml = repo.developers && repo.developers.length > 0 ? 
+            `<div class="flex items-center text-xs text-gray-500 mt-2">
+                <span class="mr-2">Built by</span>
+                <div class="flex items-center space-x-1">
+                    ${repo.developers.map(dev => 
+                        `<a href="${dev.profile_url}" target="_blank" title="@${dev.username}" class="hover:opacity-80">
+                            <img src="${dev.avatar_url}" alt="@${dev.username}" class="w-5 h-5 rounded-full">
+                        </a>`
+                    ).join('')}
+                </div>
+            </div>` : '';
+
         card.innerHTML = `
             <div class="flex items-start mb-3">
-                <img src="${repo.avatar_url}" alt="${repo.owner}" class="w-5 h-5 rounded-full mr-2 mt-0.5 flex-shrink-0">
-                <a href="${repo.html_url}" target="_blank" class="text-lg font-medium text-blue-600 hover:text-blue-800 flex-1">
-                    ${repo.full_name}
-                </a>
+                <svg class="w-4 h-4 mr-3 mt-2 flex-shrink-0 text-gray-600" fill="currentColor" viewBox="0 0 16 16">
+                    <path d="M2 2.5A2.5 2.5 0 0 1 4.5 0h8.75a.75.75 0 0 1 .75.75v12.5a.75.75 0 0 1-.75.75h-2.5a.75.75 0 1 1 0-1.5h1.75v-2h-8a1 1 0 0 0-.714 1.7.75.75 0 0 1-1.072 1.05A2.495 2.495 0 0 1 2 11.5v-9zm10.5-1V9h-8c-.356 0-.694.074-1 .208V2.5a1 1 0 0 1 1-1h8zM5 12.25v3.25a.25.25 0 0 0 .4.2l1.45-1.087a.25.25 0 0 1 .3 0L8.6 15.7a.25.25 0 0 0 .4-.2v-3.25a.25.25 0 0 0-.25-.25h-3.5a.25.25 0 0 0-.25.25z"/>
+                </svg>
+                <div class="flex-1">
+                    <a href="${repo.html_url}" target="_blank" class="text-lg font-medium text-blue-600 hover:text-blue-800">
+                        ${repo.full_name}
+                    </a>
+                    ${developersHtml}
+                </div>
             </div>
             <p class="text-gray-600 text-sm mb-3 line-clamp-2">${description}</p>
             <div class="flex flex-wrap items-center gap-4 text-xs mb-2">
@@ -311,30 +335,6 @@ function createLanguageSection(language, repos, onTimeRangeChange) {
             </div>
             ${periodStarsHtml ? `<div class="mt-2">${periodStarsHtml}</div>` : ''}
         `;
-
-        // Add popup functionality
-        const titleElement = card.querySelector('a');
-        titleElement.addEventListener('click', (e) => {
-            e.preventDefault();
-            const repoUrl = titleElement.getAttribute('href');
-
-            // Close existing popup if open
-            if (popupWindow && !popupWindow.closed) {
-                popupWindow.close();
-            }
-
-            // Open new popup window
-            const width = Math.min(1200, window.screen.width * 0.8);
-            const height = Math.min(800, window.screen.height * 0.8);
-            const left = (window.screen.width - width) / 2;
-            const top = (window.screen.height - height) / 2;
-
-            popupWindow = window.open(
-                repoUrl,
-                'github-repo',
-                `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes,status=yes`
-            );
-        });
 
         grid.appendChild(card);
     });
