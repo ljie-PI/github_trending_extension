@@ -44,7 +44,17 @@ const LANGUAGE_COLORS = {
 const AVAILABLE_LANGUAGES = Object.keys(LANGUAGE_COLORS).sort();
 
 // Default selected languages (these will be loaded by default)
-const DEFAULT_SELECTED_LANGUAGES = ['Python', 'TypeScript', 'Rust', 'Lua', 'C', 'C++', 'Java', 'Go'];
+const DEFAULT_SELECTED_LANGUAGES = [
+    "Python",
+    "TypeScript",
+    "C++",
+    "C",
+    "Java",
+    "Go",
+    "Rust",
+    "Rust",
+    "Lua",
+];
 
 // Settings keys for chrome storage
 const SETTINGS_KEYS = {
