@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "GitHub Trending",
   "version": "1.0",
-  "description": "Shows GitHub trending repositories for Python, C++, C, Rust, TypeScript, and Lua",
+  "description": "A browser extension that displays trending GitHub repositories with GitHub-style UI.",
   "permissions": [
     "storage",
     "tabs"
