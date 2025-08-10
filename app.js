@@ -9,6 +9,9 @@ const timeRangeLabels = {
 // Keep track of selected time range for each section
 const sectionTimeRanges = new Map();
 
+// Memory cache for preloaded data
+const trendingCache = new Map();
+
 // Use getLanguageColor from language-settings.js
 function getLanguageColor(language) {
     return window.LanguageSettings.getLanguageColor(language);
@@ -144,6 +147,91 @@ async function fetchTrendingRepos(language, timeRange = 'daily') {
     } finally {
         clearTimeout(timeoutId);
     }
+}
+
+// Concurrent fetching function with limit
+async function fetchMultipleTrendingConcurrent(requests, concurrencyLimit = 5) {
+    const results = [];
+    const executing = [];
+    
+    for (const request of requests) {
+        const promise = fetchTrendingRepos(request.language, request.timeRange)
+            .then(repos => ({
+                ...request,
+                repos,
+                success: true
+            }))
+            .catch(error => ({
+                ...request,
+                error,
+                success: false
+            }));
+        
+        results.push(promise);
+        
+        if (results.length >= concurrencyLimit) {
+            executing.push(promise);
+            
+            if (executing.length >= concurrencyLimit) {
+                await Promise.race(executing);
+                executing.splice(executing.findIndex(p => p === promise), 1);
+            }
+        }
+    }
+    
+    return Promise.all(results);
+}
+
+// Concurrent fetching with retry functionality
+async function fetchMultipleTrendingWithRetry(requests, concurrencyLimit = 5, retryCount = 1) {
+    let results = await fetchMultipleTrendingConcurrent(requests, concurrencyLimit);
+    
+    // Find failed requests for retry
+    const failedRequests = results.filter(result => !result.success).map(result => ({
+        language: result.language,
+        timeRange: result.timeRange
+    }));
+    
+    // Retry failed requests if any and retryCount > 0
+    if (failedRequests.length > 0 && retryCount > 0) {
+        console.log(`Retrying ${failedRequests.length} failed requests...`);
+        const retryResults = await fetchMultipleTrendingWithRetry(failedRequests, concurrencyLimit, retryCount - 1);
+        
+        // Replace failed results with retry results
+        retryResults.forEach(retryResult => {
+            const originalIndex = results.findIndex(r => 
+                r.language === retryResult.language && r.timeRange === retryResult.timeRange
+            );
+            if (originalIndex !== -1) {
+                results[originalIndex] = retryResult;
+            }
+        });
+    }
+    
+    return results;
+}
+
+// Generate cache key
+function getCacheKey(language, timeRange) {
+    return `${language || 'all'}-${timeRange}`;
+}
+
+// Get cached data
+function getCachedData(language, timeRange) {
+    return trendingCache.get(getCacheKey(language, timeRange));
+}
+
+// Set cached data
+function setCachedData(language, timeRange, data) {
+    trendingCache.set(getCacheKey(language, timeRange), {
+        data,
+        timestamp: Date.now()
+    });
+}
+
+// Check if cached data is valid (within 10 minutes)
+function isCacheValid(cacheEntry) {
+    return cacheEntry && (Date.now() - cacheEntry.timestamp) < 10 * 60 * 1000;
 }
 
 
@@ -382,6 +470,36 @@ function createErrorSection(language, error, onRetry) {
     return section;
 }
 
+// Background preloading function
+async function preloadWeeklyMonthlyData() {
+    console.log('Starting background preload of weekly and monthly data...');
+    
+    // Generate requests for weekly and monthly data for all languages
+    const preloadRequests = [];
+    languages.forEach(lang => {
+        preloadRequests.push(
+            { language: lang, timeRange: 'weekly' },
+            { language: lang, timeRange: 'monthly' }
+        );
+    });
+    
+    try {
+        const results = await fetchMultipleTrendingConcurrent(preloadRequests, 5);
+        
+        // Store successful results in cache
+        results.forEach(result => {
+            if (result.success && result.repos && result.repos.length > 0) {
+                setCachedData(result.language, result.timeRange, result.repos);
+                console.log(`Preloaded ${result.language || 'overall'} ${result.timeRange} data: ${result.repos.length} repos`);
+            }
+        });
+        
+        console.log('Background preload completed');
+    } catch (error) {
+        console.error('Error during background preload:', error);
+    }
+}
+
 async function displayTrendingRepos() {
     const container = document.getElementById('trending-container');
     container.innerHTML = ''; // Clear existing content
@@ -407,121 +525,92 @@ async function displayTrendingRepos() {
                 </div>
             `;
             container.appendChild(section);
-
-            // Start fetching data for this section
-            fetchTrendingRepos(lang, sectionTimeRanges.get(key))
-                .then(repos => {
-                    if (repos.length > 0) {
-                        const updateSection = async (newTimeRange) => {
-                            try {
-                                const newRepos = await fetchTrendingRepos(lang, newTimeRange);
-                                const oldSection = container.querySelector(`[data-language="${lang || 'all'}"]`);
-                                const newSection = createLanguageSection(lang, newRepos, updateSection);
-                                newSection.dataset.language = lang || 'all';
-                                // Ensure the grid and navigation are visible in the new section
-                                const grid = newSection.querySelector('.grid');
-                                const nav = newSection.querySelector('.navigation-controls');
-                                if (grid) grid.style.display = 'grid';
-                                if (nav) nav.style.display = 'flex';
-                                if (oldSection) {
-                                    container.replaceChild(newSection, oldSection);
-                                }
-                            } catch (error) {
-                                console.error(`Error updating ${lang} section:`, error);
-                                // Show error section for update failures
-                                const oldSection = container.querySelector(`[data-language="${lang || 'all'}"]`);
-                                if (oldSection) {
-                                    const errorSection = createErrorSection(lang, error, () => updateSection(newTimeRange));
-                                    errorSection.dataset.language = lang || 'all';
-                                    container.replaceChild(errorSection, oldSection);
-                                }
-                            }
-                        };
-
-                        const section = createLanguageSection(lang, repos, updateSection);
-                        section.dataset.language = lang || 'all';
-                        const oldSection = container.querySelector(`[data-language="${lang || 'all'}"]`);
-                        if (oldSection) {
-                            container.replaceChild(section, oldSection);
-                        }
-                    } else {
-                        // Show empty state but don't remove the section
-                        const oldSection = container.querySelector(`[data-language="${lang || 'all'}"]`);
-                        if (oldSection) {
-                            const emptySection = createErrorSection(lang, new Error('No repositories found'), 
-                                () => fetchAndUpdateSection(lang, key));
-                            emptySection.dataset.language = lang || 'all';
-                            container.replaceChild(emptySection, oldSection);
-                        }
-                    }
-                })
-                .catch(error => {
-                    console.error(`Error fetching ${lang} trending:`, error);
-                    // Show error section instead of removing
-                    const oldSection = container.querySelector(`[data-language="${lang || 'all'}"]`);
-                    if (oldSection) {
-                        const errorSection = createErrorSection(lang, error, () => fetchAndUpdateSection(lang, key));
-                        errorSection.dataset.language = lang || 'all';
-                        container.replaceChild(errorSection, oldSection);
-                    }
-                });
-
-            // Helper function to fetch and update section
-            const fetchAndUpdateSection = async (language, key) => {
-                try {
-                    const repos = await fetchTrendingRepos(language, sectionTimeRanges.get(key));
-                    if (repos.length > 0) {
-                        const updateSection = async (newTimeRange) => {
-                            try {
-                                const newRepos = await fetchTrendingRepos(language, newTimeRange);
-                                const oldSection = container.querySelector(`[data-language="${language || 'all'}"]`);
-                                const newSection = createLanguageSection(language, newRepos, updateSection);
-                                newSection.dataset.language = language || 'all';
-                                const grid = newSection.querySelector('.grid');
-                                const nav = newSection.querySelector('.navigation-controls');
-                                if (grid) grid.style.display = 'grid';
-                                if (nav) nav.style.display = 'flex';
-                                if (oldSection) {
-                                    container.replaceChild(newSection, oldSection);
-                                }
-                            } catch (error) {
-                                console.error(`Error updating ${language} section:`, error);
-                                const oldSection = container.querySelector(`[data-language="${language || 'all'}"]`);
-                                if (oldSection) {
-                                    const errorSection = createErrorSection(language, error, () => updateSection(newTimeRange));
-                                    errorSection.dataset.language = language || 'all';
-                                    container.replaceChild(errorSection, oldSection);
-                                }
-                            }
-                        };
-
-                        const section = createLanguageSection(language, repos, updateSection);
-                        section.dataset.language = language || 'all';
-                        const oldSection = container.querySelector(`[data-language="${language || 'all'}"]`);
-                        if (oldSection) {
-                            container.replaceChild(section, oldSection);
-                        }
-                    } else {
-                        // Still no repos found after retry
-                        const oldSection = container.querySelector(`[data-language="${language || 'all'}"]`);
-                        if (oldSection) {
-                            const emptySection = createErrorSection(language, new Error('No repositories found'), 
-                                () => fetchAndUpdateSection(language, key));
-                            emptySection.dataset.language = language || 'all';
-                            container.replaceChild(emptySection, oldSection);
-                        }
-                    }
-                } catch (error) {
-                    console.error(`Error in fetchAndUpdateSection for ${language}:`, error);
-                    const oldSection = container.querySelector(`[data-language="${language || 'all'}"]`);
-                    if (oldSection) {
-                        const errorSection = createErrorSection(language, error, () => fetchAndUpdateSection(language, key));
-                        errorSection.dataset.language = language || 'all';
-                        container.replaceChild(errorSection, oldSection);
-                    }
-                }
-            };
         });
+
+        // Prepare daily requests for concurrent fetching
+        const dailyRequests = languages.map(lang => ({
+            language: lang,
+            timeRange: 'daily'
+        }));
+
+        // Fetch all daily data with concurrency limit and retry
+        const dailyResults = await fetchMultipleTrendingWithRetry(dailyRequests, 5, 1);
+
+        // Process results and start background preloading
+        dailyResults.forEach((result, index) => {
+            const lang = result.language;
+            const key = lang || 'all';
+            
+            // Helper function for updating sections
+            const createUpdateFunction = (language) => {
+                return async (newTimeRange) => {
+                    try {
+                        // Check cache first
+                        const cachedData = getCachedData(language, newTimeRange);
+                        let newRepos;
+                        
+                        if (cachedData && isCacheValid(cachedData)) {
+                            console.log(`Using cached data for ${language || 'overall'} ${newTimeRange}`);
+                            newRepos = cachedData.data;
+                        } else {
+                            console.log(`Fetching fresh data for ${language || 'overall'} ${newTimeRange}`);
+                            newRepos = await fetchTrendingRepos(language, newTimeRange);
+                            if (newRepos.length > 0) {
+                                setCachedData(language, newTimeRange, newRepos);
+                            }
+                        }
+                        
+                        const oldSection = container.querySelector(`[data-language="${language || 'all'}"]`);
+                        const newSection = createLanguageSection(language, newRepos, createUpdateFunction(language));
+                        newSection.dataset.language = language || 'all';
+                        // Ensure the grid and navigation are visible in the new section
+                        const grid = newSection.querySelector('.grid');
+                        const nav = newSection.querySelector('.navigation-controls');
+                        if (grid) grid.style.display = 'grid';
+                        if (nav) nav.style.display = 'flex';
+                        if (oldSection) {
+                            container.replaceChild(newSection, oldSection);
+                        }
+                    } catch (error) {
+                        console.error(`Error updating ${language || 'overall'} section:`, error);
+                        const oldSection = container.querySelector(`[data-language="${language || 'all'}"]`);
+                        if (oldSection) {
+                            const errorSection = createErrorSection(language, error, () => createUpdateFunction(language)(newTimeRange));
+                            errorSection.dataset.language = language || 'all';
+                            container.replaceChild(errorSection, oldSection);
+                        }
+                    }
+                };
+            };
+            
+            if (result.success && result.repos && result.repos.length > 0) {
+                // Cache the daily data immediately
+                setCachedData(lang, 'daily', result.repos);
+                
+                // Create successful section with data
+                const section = createLanguageSection(lang, result.repos, createUpdateFunction(lang));
+                section.dataset.language = lang || 'all';
+                const oldSection = container.querySelector(`[data-language="${lang || 'all'}"]`);
+                if (oldSection) {
+                    container.replaceChild(section, oldSection);
+                }
+            } else {
+                // Show error section for failed or empty results
+                const error = result.error || new Error('No repositories found');
+                const errorSection = createErrorSection(lang, error, () => {
+                    // Retry by refetching
+                    displayTrendingRepos();
+                });
+                errorSection.dataset.language = lang || 'all';
+                const oldSection = container.querySelector(`[data-language="${lang || 'all'}"]`);
+                if (oldSection) {
+                    container.replaceChild(errorSection, oldSection);
+                }
+            }
+        });
+        
+        // Start background preloading after all results are processed
+        setTimeout(() => preloadWeeklyMonthlyData(), 1000);
     } catch (error) {
         console.error('Error fetching trending repositories:', error);
     }
