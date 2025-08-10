@@ -1,6 +1,6 @@
 # GitHub Trending - Edge Extension
 
-A modern browser extension that displays trending GitHub repositories with GitHub-style UI.
+A browser extension that displays trending GitHub repositories with GitHub-style UI.
 
 ## Installation
 
