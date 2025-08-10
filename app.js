@@ -255,22 +255,53 @@ function createLanguageSection(language, repos, onTimeRangeChange) {
     const navigationDiv = document.createElement('div');
     navigationDiv.className = 'flex items-center navigation-controls';
 
-    // Create select dropdown
-    const timeRangeSelect = document.createElement('select');
-    timeRangeSelect.className = 'text-gray-700 font-medium text-lg bg-transparent border border-gray-300 rounded-md px-3 py-1 cursor-pointer hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500';
+    // Create button group
+    const buttonGroup = document.createElement('div');
+    buttonGroup.className = 'flex bg-gray-100 rounded-md border border-gray-300 overflow-hidden';
 
-    // Prevent click event from bubbling up to flex container
-    timeRangeSelect.addEventListener('click', (e) => {
-        e.stopPropagation();
-    });
+    const currentTimeRange = sectionTimeRanges.get(language || 'all') || 'daily';
 
-    // Add options
-    timeRanges.forEach(range => {
-        const option = document.createElement('option');
-        option.value = range;
-        option.textContent = timeRangeLabels[range];
-        option.selected = range === sectionTimeRanges.get(language || 'all');
-        timeRangeSelect.appendChild(option);
+    // Add buttons
+    timeRanges.forEach((range, index) => {
+        const button = document.createElement('button');
+        button.className = `px-3 py-1 text-sm font-medium transition-colors border-r border-gray-300 last:border-r-0 ${
+            range === currentTimeRange 
+                ? 'bg-blue-600 text-white' 
+                : 'bg-transparent text-gray-700 hover:bg-gray-200'
+        }`;
+        button.textContent = timeRangeLabels[range];
+        button.dataset.range = range;
+        
+        // Prevent click event from bubbling up to flex container
+        button.addEventListener('click', (e) => {
+            e.stopPropagation();
+            
+            // Update button styles
+            buttonGroup.querySelectorAll('button').forEach(btn => {
+                btn.className = `px-3 py-1 text-sm font-medium transition-colors border-r border-gray-300 last:border-r-0 ${
+                    btn.dataset.range === range 
+                        ? 'bg-blue-600 text-white' 
+                        : 'bg-transparent text-gray-700 hover:bg-gray-200'
+                }`;
+            });
+            
+            // Trigger time range change
+            const newTimeRange = range;
+            sectionTimeRanges.set(language || 'all', newTimeRange);
+
+            // Show loading overlay
+            loadingOverlay.classList.remove('hidden');
+
+            // Update content
+            onTimeRangeChange(newTimeRange).then(() => {
+                // Hide loading overlay and ensure section is expanded
+                loadingOverlay.classList.add('hidden');
+                grid.style.display = 'grid';
+                navigationDiv.style.display = 'flex';
+            });
+        });
+        
+        buttonGroup.appendChild(button);
     });
 
     // Create loading overlay
@@ -286,25 +317,7 @@ function createLanguageSection(language, repos, onTimeRangeChange) {
     // Initially hide navigation for collapsed sections
     navigationDiv.style.display = language ? 'none' : 'flex';
 
-    navigationDiv.appendChild(timeRangeSelect);
-
-    // Handle time range change
-    timeRangeSelect.addEventListener('change', async (e) => {
-        e.stopPropagation(); // Prevent section collapse
-        const newTimeRange = e.target.value;
-        sectionTimeRanges.set(language || 'all', newTimeRange);
-
-        // Show loading overlay
-        loadingOverlay.classList.remove('hidden');
-
-        // Update content
-        await onTimeRangeChange(newTimeRange);
-
-        // Hide loading overlay and ensure section is expanded
-        loadingOverlay.classList.add('hidden');
-        grid.style.display = 'grid';
-        navigationDiv.style.display = 'flex';
-    });
+    navigationDiv.appendChild(buttonGroup);
 
     titleContainer.appendChild(titleDiv);
     titleContainer.appendChild(navigationDiv);
