@@ -52,7 +52,6 @@ const DEFAULT_SELECTED_LANGUAGES = [
     "Java",
     "Go",
     "Rust",
-    "Rust",
     "Lua",
 ];
 
