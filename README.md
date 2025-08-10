@@ -1,39 +1,46 @@
 # GitHub Trending - Edge Extension
 
-This Edge browser extension replaces your new tab page with a beautiful dashboard showing trending GitHub repositories for Python, C++, C, Rust, TypeScript, and Lua.
+A modern browser extension that displays trending GitHub repositories with GitHub-style UI.
 
 ## Features
 
-- Shows top trending repositories for multiple programming languages
-- Clean and modern UI using Tailwind CSS
-- Caches results to minimize API calls
-- Updates automatically every hour
-- Displays repository details including stars and descriptions
+- **36+ Programming Languages**: Validated languages from TIOBE index + custom language support
+- **GitHub-Style UI**: Repository icons, developer avatars, button groups matching GitHub design
+- **Smart Time Ranges**: Today/This week/This month with instant cached switching
+- **Progressive Loading**: Languages appear individually as they load
+- **Efficient Performance**: 5-request concurrency limit, background preloading, 10-minute caching
 
 ## Installation
 
-1. Open Edge browser and navigate to `edge://extensions/`
-2. Enable "Developer mode" in the left sidebar
-3. Click "Load unpacked"
-4. Select the directory containing this extension
+1. Open Edge/Chrome and go to `chrome://extensions/` or `edge://extensions/`
+2. Enable "Developer mode"
+3. Click "Load unpacked" and select this directory
 
 ## Usage
 
-Simply open a new tab in Edge! The extension will automatically display the trending repositories for the specified programming languages.
+- **Open new tab** - Extension loads automatically
+- **Language Settings** - Click button to add/remove languages (only new languages reload)
+- **Time Ranges** - Use Today/This week/This month buttons (preloaded data switches instantly)
+- **Repository Cards** - Click repo names (open in new tabs), view contributors, see detailed stats
 
-Each repository card shows:
-- Programming language with color indicator
-- Repository name and link
-- Description
-- Star count
+## Repository Information
+
+Each card shows:
+- Repository name with GitHub-style icon
+- Top 5 contributors with profile links
+- Stars, forks, programming language (with color)
+- Period-specific stats (e.g., "123 stars today")
 
 ## Technical Details
 
-- Uses GitHub API v3 for fetching trending repositories
-- Implements caching to respect API rate limits
-- Built with vanilla JavaScript and Tailwind CSS
-- Uses Chrome Extension Manifest V3
+- **Stack**: Vanilla JavaScript + Tailwind CSS
+- **Data**: GitHub trending pages (no API tokens needed)
+- **Storage**: Chrome local storage for settings
+- **Performance**: Concurrent fetching, memory caching, progressive loading
+- **Error Handling**: Individual retry, timeout handling, graceful degradation
 
-## Note
+## Supported Languages
 
-You may want to create GitHub API tokens if you hit rate limits. To use a token, you would need to modify the fetch headers in `app.js` to include your token.
+36 validated languages: C, C++, C#, Python, JavaScript, TypeScript, Rust, Go, Java, Swift, Kotlin, Dart, PHP, Ruby, etc.
+
+Plus custom language support.
