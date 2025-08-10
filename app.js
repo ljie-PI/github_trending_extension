@@ -11,6 +11,46 @@ const timeRangeLabels = {
 // Keep track of selected time range for each section
 const sectionTimeRanges = new Map();
 
+// Language colors mapping (GitHub's official language colors)
+function getLanguageColor(language) {
+    const colors = {
+        'Python': '#3572A5',
+        'TypeScript': '#2b7489',
+        'Rust': '#dea584',
+        'Lua': '#000080',
+        'C': '#555555',
+        'C++': '#f34b7d',
+        'JavaScript': '#f1e05a',
+        'Java': '#b07219',
+        'Go': '#00ADD8',
+        'PHP': '#4F5D95',
+        'Ruby': '#701516',
+        'Swift': '#fa7343',
+        'Kotlin': '#A97BFF',
+        'C#': '#239120',
+        'Shell': '#89e051',
+        'Vue': '#41b883',
+        'HTML': '#e34c26',
+        'CSS': '#1572B6',
+        'Dart': '#00B4AB',
+        'R': '#198CE7',
+        'Scala': '#c22d40',
+        'Perl': '#0298c3',
+        'Haskell': '#5e5086',
+        'Clojure': '#db5855',
+        'Erlang': '#B83998',
+        'F#': '#b845fc',
+        'Julia': '#a270ba',
+        'Matlab': '#e16737',
+        'Objective-C': '#438eff',
+        'PowerShell': '#012456',
+        'Assembly': '#6E4C13',
+        'VHDL': '#adb2cb',
+        'Verilog': '#b2b7f8'
+    };
+    return colors[language] || '#8b5cf6';
+}
+
 function parseTrendingHTML(html) {
     const parser = new DOMParser();
     const doc = parser.parseFromString(html, 'text/html');
@@ -23,11 +63,37 @@ function parseTrendingHTML(html) {
         const starsText = article.querySelector('a[href$="/stargazers"]')?.textContent.trim() || '0';
         const stars = parseInt(starsText.replace(/,/g, '')) || 0;
 
+        // Extract language information
+        const languageElement = article.querySelector('span[itemprop="programmingLanguage"]');
+        const language = languageElement?.textContent.trim() || '';
+
+        // Extract fork count
+        const forksElement = article.querySelector('a[href$="/forks"]');
+        const forksText = forksElement?.textContent.trim() || '0';
+        const forks = parseInt(forksText.replace(/,/g, '')) || 0;
+
+        // Extract period stars (e.g., "123 stars today")
+        const periodStarsElement = article.querySelector('span.d-inline-block.float-sm-right');
+        const periodStarsText = periodStarsElement?.textContent.trim() || '';
+        const periodStarsMatch = periodStarsText.match(/(\d+(?:,\d+)*)\s+stars?\s+(today|this week|this month)/);
+        const periodStars = periodStarsMatch ? parseInt(periodStarsMatch[1].replace(/,/g, '')) : 0;
+        const periodRange = periodStarsMatch ? periodStarsMatch[2] : '';
+
+        // Extract repository avatar/icon
+        const avatarElement = article.querySelector('img[src*="avatars"]');
+        const avatar = avatarElement ? avatarElement.src : `https://github.com/${owner.trim()}.png?size=40`;
+
         return {
             full_name: `${owner.trim()}/${repo.trim()}`,
             description,
             stargazers_count: stars,
-            html_url: `https://github.com${titleElement.getAttribute('href')}`
+            html_url: `https://github.com${titleElement.getAttribute('href')}`,
+            language,
+            forks_count: forks,
+            period_stars: periodStars,
+            period_range: periodRange,
+            avatar_url: avatar,
+            owner: owner.trim()
         };
     });
 }
@@ -212,19 +278,49 @@ function createLanguageSection(language, repos, onTimeRangeChange) {
         card.className = 'repo-card bg-gray-50 rounded-lg p-4 hover:shadow-md transition-shadow';
 
         const stars = repo.stargazers_count.toLocaleString();
+        const forks = repo.forks_count.toLocaleString();
         const description = repo.description ? repo.description : 'No description available';
+        
+        // Generate language indicator HTML
+        const languageHtml = repo.language ? 
+            `<span class="flex items-center text-gray-600 text-xs mr-4">
+                <span class="language-dot language-${repo.language.replace(/\+/g, 'plus').replace(/\s+/g, '-').toLowerCase()}" style="background-color: ${getLanguageColor(repo.language)}"></span>
+                ${repo.language}
+            </span>` : '';
 
-        card.innerHTML = `
-            <a href="${repo.html_url}" target="_blank" class="text-lg font-medium text-blue-600 hover:text-blue-800 block mb-2">
-                ${repo.full_name}
-            </a>
-            <p class="text-gray-600 text-sm mb-3 line-clamp-2">${description}</p>
-            <div class="flex items-center text-gray-500 text-sm">
-                <svg class="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
+        // Generate period stars HTML
+        const periodStarsHtml = repo.period_stars > 0 ? 
+            `<span class="flex items-center text-yellow-600 text-sm">
+                <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
                     <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/>
                 </svg>
-                ${stars} stars
+                ${repo.period_stars.toLocaleString()} stars ${repo.period_range}
+            </span>` : '';
+
+        card.innerHTML = `
+            <div class="flex items-start mb-3">
+                <img src="${repo.avatar_url}" alt="${repo.owner}" class="w-5 h-5 rounded-full mr-2 mt-0.5 flex-shrink-0">
+                <a href="${repo.html_url}" target="_blank" class="text-lg font-medium text-blue-600 hover:text-blue-800 flex-1">
+                    ${repo.full_name}
+                </a>
             </div>
+            <p class="text-gray-600 text-sm mb-3 line-clamp-2">${description}</p>
+            <div class="flex flex-wrap items-center gap-4 text-xs mb-2">
+                ${languageHtml}
+                <span class="flex items-center text-gray-600">
+                    <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 16 16">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M8 .25a.75.75 0 01.673.418l1.882 3.815 4.21.612a.75.75 0 01.416 1.279l-3.046 2.97.719 4.192a.75.75 0 01-1.088.791L8 12.347l-3.766 1.98a.75.75 0 01-1.088-.79l.72-4.194L.818 6.374a.75.75 0 01.416-1.28l4.21-.611L7.327.668A.75.75 0 018 .25z"/>
+                    </svg>
+                    ${stars}
+                </span>
+                <span class="flex items-center text-gray-600">
+                    <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 16 16">
+                        <path d="M5 3.25a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm0 2.122a2.25 2.25 0 10-1.5 0v.878A2.25 2.25 0 005.75 8.5h1.5v2.128a2.251 2.251 0 101.5 0V8.5h1.5a2.25 2.25 0 002.25-2.25v-.878a2.25 2.25 0 10-1.5 0v.878a.75.75 0 01-.75.75h-4.5A.75.75 0 015 6.25v-.878zm3.75 7.378a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm3-8.75a.75.75 0 11-1.5 0 .75.75 0 011.5 0z"/>
+                    </svg>
+                    ${forks}
+                </span>
+            </div>
+            ${periodStarsHtml ? `<div class="mt-2">${periodStarsHtml}</div>` : ''}
         `;
 
         // Add popup functionality

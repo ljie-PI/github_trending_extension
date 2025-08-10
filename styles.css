@@ -31,9 +31,29 @@
     margin-right: 6px;
 }
 
+.language-dot {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    margin-right: 6px;
+    flex-shrink: 0;
+}
+
 .language-C\+\+ { background-color: #f34b7d; }
 .language-C { background-color: #555555; }
 .language-Python { background-color: #3572A5; }
 .language-Rust { background-color: #dea584; }
 .language-TypeScript { background-color: #2b7489; }
 .language-Lua { background-color: #000080; }
+
+/* Repo card avatars */
+.repo-card img {
+    object-fit: cover;
+    background-color: #f3f4f6;
+}
+
+/* Period stars styling */
+.repo-card .text-yellow-600 {
+    font-weight: 500;
+}
