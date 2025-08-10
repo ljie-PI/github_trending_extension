@@ -1,6 +1,4 @@
 let languages = [null]; // Will be populated from settings (null = Overall Trending)
-const CACHE_DURATION = 60 * 60 * 1000;
-//const CACHE_DURATION = 0;
 const timeRanges = ['daily', 'weekly', 'monthly'];
 const timeRangeLabels = {
     'daily': 'Today',
@@ -73,12 +71,15 @@ function parseTrendingHTML(html) {
 
         // Extract developers/contributors (Built by section)
         const developers = [];
-        const builtBySection = article.querySelector('span:contains("Built by"), .text-gray:contains("Built by")') || 
-                              Array.from(article.querySelectorAll('span')).find(span => 
-                                  span.textContent.includes('Built by'));
+        // Find "Built by" text in spans
+        const builtBySection = Array.from(article.querySelectorAll('span')).find(span => 
+            span.textContent.trim().includes('Built by'));
         
         if (builtBySection) {
-            const developerLinks = builtBySection.parentElement.querySelectorAll('a[href^="/"]');
+            // Look for developer avatars in the same container or parent
+            const container = builtBySection.parentElement || builtBySection;
+            const developerLinks = container.querySelectorAll('a[href^="/"]');
+            
             for (let i = 0; i < Math.min(5, developerLinks.length); i++) {
                 const link = developerLinks[i];
                 const avatar = link.querySelector('img');
@@ -109,32 +110,22 @@ function parseTrendingHTML(html) {
 }
 
 async function fetchTrendingRepos(language, timeRange = 'daily') {
-    const cacheKey = `trending-${language || 'all'}-${timeRange}`;
-    const cachedData = await getCachedData(cacheKey);
-
-    if (cachedData) {
-        return cachedData;
-    }
-
     const url = language ?
         `https://github.com/trending/${encodeURIComponent(language)}?since=${timeRange}` :
         `https://github.com/trending?since=${timeRange}`;
+    
     // Create an AbortController for the timeout
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 seconds timeout
 
     try {
-
-        const response = await fetch(
-            url,
-            {
-                headers: {
-                    'Accept': 'text/html',
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-                },
-                signal: controller.signal
-            }
-        );
+        const response = await fetch(url, {
+            headers: {
+                'Accept': 'text/html',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            },
+            signal: controller.signal
+        });
 
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
@@ -142,7 +133,6 @@ async function fetchTrendingRepos(language, timeRange = 'daily') {
 
         const html = await response.text();
         const repos = parseTrendingHTML(html);
-        await cacheData(cacheKey, repos);
         return repos;
     } catch (error) {
         if (error.name === 'AbortError') {
@@ -152,32 +142,10 @@ async function fetchTrendingRepos(language, timeRange = 'daily') {
         }
         return [];
     } finally {
-        clearTimeout(timeoutId); // Clear timeout on error
+        clearTimeout(timeoutId);
     }
 }
 
-async function getCachedData(key) {
-    return new Promise(resolve => {
-        chrome.storage.local.get(key, result => {
-            if (result[key] && (Date.now() - result[key].timestamp) < CACHE_DURATION) {
-                resolve(result[key].data);
-            } else {
-                resolve(null);
-            }
-        });
-    });
-}
-
-async function cacheData(key, data) {
-    return new Promise(resolve => {
-        chrome.storage.local.set({
-            [key]: {
-                data: data,
-                timestamp: Date.now()
-            }
-        }, resolve);
-    });
-}
 
 function createLanguageSection(language, repos, onTimeRangeChange) {
     const section = document.createElement('div');
@@ -344,6 +312,76 @@ function createLanguageSection(language, repos, onTimeRangeChange) {
     return section;
 }
 
+function createErrorSection(language, error, onRetry) {
+    const section = document.createElement('div');
+    section.className = 'language-section bg-white rounded-lg shadow-lg p-6 relative';
+
+    const header = document.createElement('div');
+    header.className = 'flex items-center justify-between cursor-pointer p-2 rounded';
+
+    const titleContainer = document.createElement('div');
+    titleContainer.className = 'flex items-center justify-between w-full';
+
+    const titleDiv = document.createElement('div');
+    titleDiv.className = 'flex items-center';
+    titleDiv.innerHTML = language ?
+        `<span class="language-indicator ${getLanguageClass(language)}"></span>
+        <h2 class="text-2xl font-bold text-gray-800">${language}</h2>` :
+        `<h2 class="text-2xl font-bold text-gray-800">Overall Trending</h2>`;
+
+    const navigationDiv = document.createElement('div');
+    navigationDiv.className = 'flex items-center navigation-controls';
+
+    // Initially show navigation for error sections
+    navigationDiv.style.display = 'flex';
+
+    titleContainer.appendChild(titleDiv);
+    titleContainer.appendChild(navigationDiv);
+    header.appendChild(titleContainer);
+
+    // Error content
+    const errorContent = document.createElement('div');
+    errorContent.className = 'mt-6 text-center py-8';
+    
+    const isTimeout = error.name === 'AbortError' || error.message.includes('timeout') || error.message.includes('Timeout');
+    const errorMessage = isTimeout ? 'Request timed out' : 'Failed to load trending repositories';
+    
+    errorContent.innerHTML = `
+        <div class="text-gray-500 mb-4">
+            <svg class="w-12 h-12 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 18.5c-.77.833.192 2.5 1.732 2.5z"></path>
+            </svg>
+            <p class="text-lg font-medium text-gray-700">${errorMessage}</p>
+            <p class="text-sm text-gray-500 mt-1">${isTimeout ? 'The request took too long to complete' : 'Please check your connection and try again'}</p>
+        </div>
+        <button class="retry-btn px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+            <svg class="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+            </svg>
+            Retry
+        </button>
+    `;
+
+    // Add retry functionality
+    const retryBtn = errorContent.querySelector('.retry-btn');
+    retryBtn.addEventListener('click', () => {
+        // Show loading state
+        errorContent.innerHTML = `
+            <div class="text-center py-8">
+                <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mb-2"></div>
+                <span class="text-gray-600">Loading...</span>
+            </div>
+        `;
+        
+        // Trigger retry
+        onRetry();
+    });
+
+    section.appendChild(header);
+    section.appendChild(errorContent);
+    return section;
+}
+
 async function displayTrendingRepos() {
     const container = document.getElementById('trending-container');
     container.innerHTML = ''; // Clear existing content
@@ -390,6 +428,13 @@ async function displayTrendingRepos() {
                                 }
                             } catch (error) {
                                 console.error(`Error updating ${lang} section:`, error);
+                                // Show error section for update failures
+                                const oldSection = container.querySelector(`[data-language="${lang || 'all'}"]`);
+                                if (oldSection) {
+                                    const errorSection = createErrorSection(lang, error, () => updateSection(newTimeRange));
+                                    errorSection.dataset.language = lang || 'all';
+                                    container.replaceChild(errorSection, oldSection);
+                                }
                             }
                         };
 
@@ -400,80 +445,88 @@ async function displayTrendingRepos() {
                             container.replaceChild(section, oldSection);
                         }
                     } else {
-                        // Remove the section if no repos found
+                        // Show empty state but don't remove the section
                         const oldSection = container.querySelector(`[data-language="${lang || 'all'}"]`);
                         if (oldSection) {
-                            oldSection.remove();
+                            const emptySection = createErrorSection(lang, new Error('No repositories found'), 
+                                () => fetchAndUpdateSection(lang, key));
+                            emptySection.dataset.language = lang || 'all';
+                            container.replaceChild(emptySection, oldSection);
                         }
                     }
                 })
                 .catch(error => {
                     console.error(`Error fetching ${lang} trending:`, error);
-                    // Remove the section on error
+                    // Show error section instead of removing
                     const oldSection = container.querySelector(`[data-language="${lang || 'all'}"]`);
                     if (oldSection) {
-                        oldSection.remove();
+                        const errorSection = createErrorSection(lang, error, () => fetchAndUpdateSection(lang, key));
+                        errorSection.dataset.language = lang || 'all';
+                        container.replaceChild(errorSection, oldSection);
                     }
                 });
+
+            // Helper function to fetch and update section
+            const fetchAndUpdateSection = async (language, key) => {
+                try {
+                    const repos = await fetchTrendingRepos(language, sectionTimeRanges.get(key));
+                    if (repos.length > 0) {
+                        const updateSection = async (newTimeRange) => {
+                            try {
+                                const newRepos = await fetchTrendingRepos(language, newTimeRange);
+                                const oldSection = container.querySelector(`[data-language="${language || 'all'}"]`);
+                                const newSection = createLanguageSection(language, newRepos, updateSection);
+                                newSection.dataset.language = language || 'all';
+                                const grid = newSection.querySelector('.grid');
+                                const nav = newSection.querySelector('.navigation-controls');
+                                if (grid) grid.style.display = 'grid';
+                                if (nav) nav.style.display = 'flex';
+                                if (oldSection) {
+                                    container.replaceChild(newSection, oldSection);
+                                }
+                            } catch (error) {
+                                console.error(`Error updating ${language} section:`, error);
+                                const oldSection = container.querySelector(`[data-language="${language || 'all'}"]`);
+                                if (oldSection) {
+                                    const errorSection = createErrorSection(language, error, () => updateSection(newTimeRange));
+                                    errorSection.dataset.language = language || 'all';
+                                    container.replaceChild(errorSection, oldSection);
+                                }
+                            }
+                        };
+
+                        const section = createLanguageSection(language, repos, updateSection);
+                        section.dataset.language = language || 'all';
+                        const oldSection = container.querySelector(`[data-language="${language || 'all'}"]`);
+                        if (oldSection) {
+                            container.replaceChild(section, oldSection);
+                        }
+                    } else {
+                        // Still no repos found after retry
+                        const oldSection = container.querySelector(`[data-language="${language || 'all'}"]`);
+                        if (oldSection) {
+                            const emptySection = createErrorSection(language, new Error('No repositories found'), 
+                                () => fetchAndUpdateSection(language, key));
+                            emptySection.dataset.language = language || 'all';
+                            container.replaceChild(emptySection, oldSection);
+                        }
+                    }
+                } catch (error) {
+                    console.error(`Error in fetchAndUpdateSection for ${language}:`, error);
+                    const oldSection = container.querySelector(`[data-language="${language || 'all'}"]`);
+                    if (oldSection) {
+                        const errorSection = createErrorSection(language, error, () => fetchAndUpdateSection(language, key));
+                        errorSection.dataset.language = language || 'all';
+                        container.replaceChild(errorSection, oldSection);
+                    }
+                }
+            };
         });
     } catch (error) {
         console.error('Error fetching trending repositories:', error);
     }
 }
 
-// Background cache refresh function
-async function refreshCache() {
-    try {
-        // Refresh cache for each language and time range combination
-        for (const lang of languages) {
-            for (const timeRange of timeRanges) {
-                const cacheKey = `trending-${lang || 'all'}-${timeRange}`;
-                try {
-                    const url = lang ?
-                        `https://github.com/trending/${encodeURIComponent(lang)}?since=${timeRange}` :
-                        `https://github.com/trending?since=${timeRange}`;
-
-                    const controller = new AbortController();
-                    const timeoutId = setTimeout(() => controller.abort(), 5000);
-
-                    try {
-                        const response = await fetch(url, {
-                            headers: {
-                                'Accept': 'text/html',
-                                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-                            },
-                            signal: controller.signal
-                        });
-
-                        if (!response.ok) {
-                            throw new Error(`HTTP error! status: ${response.status}`);
-                        }
-
-                        const html = await response.text();
-                        const repos = parseTrendingHTML(html);
-                        await cacheData(cacheKey, repos);
-                        console.log(`Cache refreshed for ${lang || 'all'} - ${timeRange}`);
-                    } catch (error) {
-                        if (error.name === 'AbortError') {
-                            console.error(`Timeout refreshing cache for ${lang || 'all'} - ${timeRange}`);
-                        } else {
-                            console.error(`Error refreshing cache for ${lang || 'all'} - ${timeRange}:`, error);
-                        }
-                    } finally {
-                        clearTimeout(timeoutId);
-                    }
-
-                    // Add a small delay between requests to avoid rate limiting
-                    await new Promise(resolve => setTimeout(resolve, 1000));
-                } catch (error) {
-                    console.error(`Failed to refresh cache for ${lang || 'all'} - ${timeRange}:`, error);
-                }
-            }
-        }
-    } catch (error) {
-        console.error('Error in cache refresh job:', error);
-    }
-}
 
 // Settings functionality
 let currentSelectedLanguages = [];
@@ -648,9 +701,6 @@ async function initialize() {
     
     // Initial load
     displayTrendingRepos();
-    
-    // Start background cache refresh
-    setInterval(refreshCache, CACHE_DURATION);
 }
 
 // Start the application
