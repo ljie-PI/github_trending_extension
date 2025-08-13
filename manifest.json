@@ -4,8 +4,7 @@
   "version": "1.0",
   "description": "A browser extension that displays trending GitHub repositories with GitHub-style UI.",
   "permissions": [
-    "storage",
-    "tabs"
+    "storage"
   ],
   "action": {},
   "background": {
